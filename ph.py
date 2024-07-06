@@ -1,14 +1,19 @@
+##
 import os
 import numpy as np
 import cv2 as cv
+import pandas as pd
 import tensorflow as tf
+import keras
 from tqdm import tqdm
+from keras import backend as K
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-from scipy.optimize import curve_fit
+# from sklearn.metrics import mean_squared_error
+# from scipy.optimize import curve_fit
 from glob import glob
 from matplotlib import pyplot as plt
 from skimage import io
+##
 
 
 def create_datasets_from_sample_ph(ph_path):
@@ -29,41 +34,14 @@ def create_datasets_from_sample_ph(ph_path):
         datasets[i*62500:(i+1)*62500] = data
     return datasets
 
-# # plot data # #
-# plt.figure(figsize=(12, 9))
-# plt.subplot(131)
-# plt.scatter(test_datasets[:, 0], test_datasets[:, -1], c='r')
-# plt.ylabel('pH')
-# plt.xlabel('R')
-#
-# plt.subplot(132)
-# plt.scatter(test_datasets[:, 1], test_datasets[:, -1], c='g')
-# plt.ylabel('pH')
-# plt.xlabel('G')
-#
-# plt.subplot(133)
-# plt.scatter(test_datasets[:, 2], test_datasets[:, -1], c='b')
-# plt.ylabel('pH')
-# plt.xlabel('B')
-#
-# plt.show()
 
-# # curve fitting # #
+##
+# Custom R² score function
+def r2_score(y_true, y_pred):
+    SS_res = K.sum(K.square(y_true - y_pred))
+    SS_tot = K.sum(K.square(y_true - K.mean(y_true)))
+    return 1 - SS_res / (SS_tot + K.epsilon())
 
-
-# def func(x, a, b, c, d):
-#     R, G, B = x[:, 0], x[:, 1], x[:, 2]
-#     return a*R + b*G + c*B + d
-#
-#
-# popt, _ = curve_fit(func, train_datasets[:, :3], train_datasets[:, -1])
-# a, b, c, d = popt
-# print(a, b, c, d)
-# # -5.942919252287673 5.9305925444836225 -0.9876440954361952 7.111179588962335
-# test_pre = func(test_datasets[:, :3], a=a, b=b, c=c, d=d)
-# mse = mean_squared_error(test_datasets[:, -1], test_pre)
-# print(mse)
-# # 0.078113504
 
 def model_train_saving(datasets):
     '''
@@ -81,17 +59,17 @@ def model_train_saving(datasets):
     test_datasets = test_datasets.map(parse).batch(batch_size=50).repeat()
 
     # simple nn prediction model construction
-    x_in = tf.keras.layers.Input(shape=(3, ))
-    x = tf.keras.layers.Dense(10, activation='relu')(x_in)
-    x = tf.keras.layers.Dense(5, activation='relu')(x)
-    x_out = tf.keras.layers.Dense(1, activation='linear')(x)
+    x_in = keras.layers.Input(shape=(3, ))
+    x = keras.layers.Dense(10, activation='relu')(x_in)
+    x = keras.layers.Dense(5, activation='relu')(x)
+    x_out = keras.layers.Dense(1, activation='linear')(x)
 
-    model = tf.keras.Model(x_in, x_out)
+    model = keras.Model(x_in, x_out)
 
     model.summary()
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001),
                   loss='mse',
-                  metrics=[tf.keras.metrics.MSE])
+                  metrics=[keras.metrics.MeanSquaredError(), r2_score])
     # model fitting
     model.fit(train_datasets, epochs=20, steps_per_epoch=7875,
               validation_data=test_datasets, validation_steps=875)
@@ -100,13 +78,14 @@ def model_train_saving(datasets):
     return model
 
 
+
 if __name__ == '__main__':
     # some parameters
     ph_path = r'pH-calibration/'
     figures_path = r'../Figures/**/**/**/'
     if os.path.exists(r'model.h5'):
         print('found trained model in current folder, starting to loading existed model')
-        model = tf.keras.models.load_model('model.h5')
+        model = keras.models.load_model('model.h5')
     else:
         print('model file unfounded, starting to make datasets and train model from scratch')
         datasets = create_datasets_from_sample_ph(ph_path)
